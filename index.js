@@ -21,8 +21,23 @@ app.post("/shortner", (req, res, next) => {
     if (!isURL(url)) {
       return res.status(400).send("Invalid URL");
     }
-    const short_url = newPathUrl();
     const baseUrl = `${req.protocol}://${req.get("host")}`;
+
+    const stmtOriginalUrl = db.prepare(
+      "SELECT original_url FROM urls WHERE original_url = ?"
+    );
+    const resultOriginalUrl = stmtOriginalUrl.get(url);
+
+    if (resultOriginalUrl) {
+      const stmt = db.prepare(
+        "SELECT short_url FROM urls WHERE original_url = ?"
+      );
+      const result = stmt.get(url);
+      const fullShortUrl = `${baseUrl}/${result.short_url}`;
+      return res.status(200).send({ fullShortUrl });
+    }
+
+    const short_url = newPathUrl();
     const fullShortUrl = `${baseUrl}/${short_url}`;
     console.log(`short_url: ${short_url}`);
     const id = uuidv4();
@@ -37,6 +52,7 @@ app.post("/shortner", (req, res, next) => {
   }
 });
 
+//Redirect
 app.get("/:shortUrl", (req, res, next) => {
   try {
     const { shortUrl } = req.params;
@@ -44,10 +60,33 @@ app.get("/:shortUrl", (req, res, next) => {
       "SELECT original_url FROM urls WHERE short_url = ?"
     );
     const result = stmt.get(shortUrl);
-    console.log(`shortUrl: ${shortUrl}`);
-    console.log(`result: ${result}`);
+
+    const stmt2 = db.prepare(
+      "UPDATE urls SET times_clicked = times_clicked + 1 WHERE short_url = ?"
+    );
+    stmt2.run(shortUrl);
+
     if (result) {
       res.redirect(result.original_url);
+    } else {
+      res.status(404).json({ error: "URL no encontrada" });
+    }
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.get("/stats/:shortUrl", (req, res, next) => {
+  try {
+    const { shortUrl } = req.params;
+    console.log(`shortUrl: ${shortUrl}`);
+    const stmt = db.prepare(
+      "SELECT original_url, times_clicked FROM urls WHERE short_url = ?"
+    );
+    const result = stmt.get(shortUrl);
+
+    if (result) {
+      res.status(200).json(result);
     } else {
       res.status(404).json({ error: "URL no encontrada" });
     }

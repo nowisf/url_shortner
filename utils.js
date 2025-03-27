@@ -17,7 +17,6 @@ function randomString(length) {
     length: length,
     pool: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
   });
-  console.log(`string: ${string}`);
   return string;
 }
 

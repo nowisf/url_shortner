@@ -4,17 +4,15 @@
 
 
 
-### SHORTNER GET  
-GET {{urlBase}}/shortner HTTP/1.1|
 
 ### SHORTNER POST
 POST {{urlBase}}/shortner HTTP/1.1
 Content-Type: application/json
 
 {
-   "url": "https://www.google.com"
+   "url": "https://www.reddit.com/r/animalWell/comments/1jku3t9/i_really_want_to_love_this_game_but_the_controls/"
 }
 
 
-
-  
+### SHORTNER GET
+GET {{urlBase}}/stats/C5mNs HTTP/1.1
