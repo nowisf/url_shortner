@@ -12,7 +12,7 @@ const app = express();
 app.use(express.json());
 
 app.listen(PORT, () => {
-  console.log(`Example app listening on port ${PORT}`);
+  console.log(`Shortener app ${PORT}`);
 });
 
 app.post("/shortner", (req, res, next) => {
@@ -39,7 +39,6 @@ app.post("/shortner", (req, res, next) => {
 
     const short_url = newPathUrl();
     const fullShortUrl = `${baseUrl}/${short_url}`;
-    console.log(`short_url: ${short_url}`);
     const id = uuidv4();
     const stmt = db.prepare(
       "INSERT INTO urls (id, original_url, creation_date, short_url) VALUES (?, ?, ?, ?)"
@@ -79,7 +78,6 @@ app.get("/:shortUrl", (req, res, next) => {
 app.get("/stats/:shortUrl", (req, res, next) => {
   try {
     const { shortUrl } = req.params;
-    console.log(`shortUrl: ${shortUrl}`);
     const stmt = db.prepare(
       "SELECT original_url, times_clicked FROM urls WHERE short_url = ?"
     );

@@ -1,6 +1,5 @@
 import Database from "better-sqlite3";
 
-// Conectar a la base de datos (se crea si no existe)
 const db = new Database("database.sqlite");
 
 db.exec(`

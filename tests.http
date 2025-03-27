@@ -15,4 +15,5 @@ Content-Type: application/json
 
 
 ### SHORTNER GET
-GET {{urlBase}}/stats/C5mNs HTTP/1.1
+GET {{urlBase}}/stats/C5mNw HTTP/1.1
+
