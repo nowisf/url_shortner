@@ -1,4 +1,3 @@
-import Chance from "chance";
 import { db } from "./db.js";
 
 function isURL(str) {
@@ -11,13 +10,12 @@ function isURL(str) {
 }
 
 function randomString(length) {
-  const chance = new Chance();
-
-  const string = chance.string({
-    length: length,
-    pool: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-  });
-  return string;
+  const characters =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  return Array.from(
+    { length },
+    () => characters[Math.floor(Math.random() * characters.length)]
+  ).join("");
 }
 
 function newPathUrl() {

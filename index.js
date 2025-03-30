@@ -1,6 +1,5 @@
 import { db } from "./db.js";
 import express from "express";
-import { v4 as uuidv4 } from "uuid";
 import "dotenv/config";
 import "chance";
 
@@ -39,7 +38,7 @@ app.post("/shortner", (req, res, next) => {
 
     const short_url = newPathUrl();
     const fullShortUrl = `${baseUrl}/${short_url}`;
-    const id = uuidv4();
+    const id = crypto.randomUUID();
     const stmt = db.prepare(
       "INSERT INTO urls (id, original_url, creation_date, short_url) VALUES (?, ?, ?, ?)"
     );
