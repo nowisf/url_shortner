@@ -10,6 +10,17 @@ if (process.env.NODE_ENV === "production") {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_KEY;
 
+  console.log(
+    "SUPABASE_URL configurada:",
+    !!supabaseUrl,
+    supabaseUrl ? `(${supabaseUrl.substring(0, 15)}...)` : ""
+  );
+  console.log(
+    "SUPABASE_KEY configurada:",
+    !!supabaseKey,
+    supabaseKey ? `(longitud: ${supabaseKey.length})` : ""
+  );
+
   if (!supabaseUrl || !supabaseKey) {
     console.error(
       "Error: SUPABASE_URL y SUPABASE_KEY deben estar definidos en variables de entorno"
@@ -17,25 +28,51 @@ if (process.env.NODE_ENV === "production") {
     process.exit(1);
   }
 
+  // Crear cliente de Supabase
+  console.log("Iniciando conexión con Supabase...");
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  // Verificar conexión con Supabase
-  supabase
-    .from("urls") // La tabla se llama 'urls' en el esquema 'public'
-    .select("*", { count: "exact", head: true })
-    .then(({ count, error }) => {
-      if (error) {
-        console.error("Error al conectar con Supabase:", error);
-        console.log("Detalles del error:", JSON.stringify(error));
-        return;
-      }
-      console.log(
-        `Conectado a Supabase. Tabla 'urls' tiene ${count || 0} registros.`
-      );
-    })
-    .catch((err) => {
-      console.error("Error al verificar conexión con Supabase:", err);
-    });
+  // Función para verificar la conexión
+  const checkConnection = () => {
+    console.log("Verificando conexión con Supabase...");
+    return supabase
+      .from("urls")
+      .select("*", { count: "exact", head: true })
+      .then(({ count, error }) => {
+        if (error) {
+          console.error("Error al conectar con Supabase:", error);
+          console.log("Detalles del error:", JSON.stringify(error));
+
+          // Intentar detectar si es un problema de credenciales o permisos
+          if (error.code === "PGRST301" || error.message?.includes("JWT")) {
+            console.error(
+              "Posible problema con la clave de API o autenticación"
+            );
+          } else if (error.code === "PGRST106") {
+            console.error(
+              "Problema con el esquema o nombre de tabla. Asegúrate que la tabla 'urls' existe en el esquema 'public'"
+            );
+          }
+          return false;
+        }
+        console.log(
+          `Conectado a Supabase. Tabla 'urls' tiene ${count || 0} registros.`
+        );
+        return true;
+      })
+      .catch((err) => {
+        console.error(
+          "Error no controlado al verificar conexión con Supabase:",
+          err
+        );
+        return false;
+      });
+  };
+
+  // Agregar un retraso antes de verificar la conexión
+  setTimeout(() => {
+    checkConnection();
+  }, 2000);
 
   // Crear una versión compatible con la API de better-sqlite3
   db = {
@@ -45,6 +82,7 @@ if (process.env.NODE_ENV === "production") {
           try {
             // Adaptar consultas INSERT, UPDATE, DELETE para Supabase
             if (text.trim().toLowerCase().startsWith("insert into urls")) {
+              console.log("Ejecutando INSERT en Supabase");
               const { data, error } = await supabase.from("urls").insert([
                 {
                   id: params[0],
@@ -64,6 +102,7 @@ if (process.env.NODE_ENV === "production") {
                 .toLowerCase()
                 .includes("update urls set times_clicked")
             ) {
+              console.log("Ejecutando UPDATE contador en Supabase");
               // Intentar update directo sin rpc
               const getResult = await supabase
                 .from("urls")
@@ -100,6 +139,7 @@ if (process.env.NODE_ENV === "production") {
           try {
             // Adaptar consultas SELECT para Supabase
             if (text.includes("FROM urls WHERE short_url =")) {
+              console.log(`Buscando URL con short_url=${params[0]}`);
               const { data, error } = await supabase
                 .from("urls")
                 .select("*")
@@ -114,6 +154,9 @@ if (process.env.NODE_ENV === "production") {
               }
               return data;
             } else if (text.includes("FROM urls WHERE original_url =")) {
+              console.log(
+                `Buscando URL con original_url=${params[0].substring(0, 30)}...`
+              );
               const { data, error } = await supabase
                 .from("urls")
                 .select("*")
@@ -138,6 +181,7 @@ if (process.env.NODE_ENV === "production") {
         },
         all: async (...params) => {
           try {
+            console.log("Consultando todas las URLs");
             const { data, error } = await supabase.from("urls").select("*");
             if (error) {
               console.error("Error en all:", error);
