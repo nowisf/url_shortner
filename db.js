@@ -21,11 +21,12 @@ if (process.env.NODE_ENV === "production") {
 
   // Verificar conexión con Supabase
   supabase
-    .from("urls")
+    .from("urls") // La tabla se llama 'urls' en el esquema 'public'
     .select("*", { count: "exact", head: true })
     .then(({ count, error }) => {
       if (error) {
         console.error("Error al conectar con Supabase:", error);
+        console.log("Detalles del error:", JSON.stringify(error));
         return;
       }
       console.log(
@@ -52,7 +53,10 @@ if (process.env.NODE_ENV === "production") {
                   short_url: params[3],
                 },
               ]);
-              if (error) throw error;
+              if (error) {
+                console.error("Error en insert:", error);
+                throw error;
+              }
               return data;
             } else if (
               text
@@ -60,32 +64,32 @@ if (process.env.NODE_ENV === "production") {
                 .toLowerCase()
                 .includes("update urls set times_clicked")
             ) {
-              // Para actualizar times_clicked directamente sin usar RPC
-              const { data, error } = await supabase
+              // Intentar update directo sin rpc
+              const getResult = await supabase
                 .from("urls")
-                .update({ times_clicked: supabase.rpc("increment_counter") })
+                .select("times_clicked")
+                .eq("short_url", params[0])
+                .single();
+
+              if (getResult.error) {
+                console.error("Error al obtener contador:", getResult.error);
+                throw getResult.error;
+              }
+
+              const newCount = (getResult.data?.times_clicked || 0) + 1;
+              const updateResult = await supabase
+                .from("urls")
+                .update({ times_clicked: newCount })
                 .eq("short_url", params[0]);
 
-              if (error) {
-                // Falló el método RPC, intentar con update directo
-                const getResult = await supabase
-                  .from("urls")
-                  .select("times_clicked")
-                  .eq("short_url", params[0])
-                  .single();
-
-                if (getResult.error) throw getResult.error;
-
-                const newCount = (getResult.data?.times_clicked || 0) + 1;
-                const updateResult = await supabase
-                  .from("urls")
-                  .update({ times_clicked: newCount })
-                  .eq("short_url", params[0]);
-
-                if (updateResult.error) throw updateResult.error;
-                return updateResult.data;
+              if (updateResult.error) {
+                console.error(
+                  "Error al actualizar contador:",
+                  updateResult.error
+                );
+                throw updateResult.error;
               }
-              return data;
+              return updateResult.data;
             }
           } catch (err) {
             console.error("Error en run:", err);
@@ -105,6 +109,7 @@ if (process.env.NODE_ENV === "production") {
               if (error) {
                 // Si es error de no encontrado, devolver null
                 if (error.code === "PGRST116") return null;
+                console.error("Error en get (short_url):", error);
                 throw error;
               }
               return data;
@@ -118,6 +123,7 @@ if (process.env.NODE_ENV === "production") {
               if (error) {
                 // Si es error de no encontrado, devolver null
                 if (error.code === "PGRST116") return null;
+                console.error("Error en get (original_url):", error);
                 throw error;
               }
               return data;
@@ -125,13 +131,18 @@ if (process.env.NODE_ENV === "production") {
             return null;
           } catch (err) {
             console.error("Error en get:", err);
+            console.error("Texto de la consulta:", text);
+            console.error("Parámetros:", params);
             throw err;
           }
         },
         all: async (...params) => {
           try {
             const { data, error } = await supabase.from("urls").select("*");
-            if (error) throw error;
+            if (error) {
+              console.error("Error en all:", error);
+              throw error;
+            }
             return data || [];
           } catch (err) {
             console.error("Error en all:", err);

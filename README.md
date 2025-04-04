@@ -31,11 +31,21 @@ Esto iniciará el servidor en modo desarrollo usando SQLite como base de datos.
 
 1. Crea una cuenta en [Supabase](https://supabase.com/)
 2. Crea un nuevo proyecto
-3. Ve a la sección "SQL Editor" y ejecuta el siguiente SQL para crear la tabla:
+3. Ve a la sección "Table Editor" y crea una nueva tabla con la siguiente estructura:
+
+   - **Nombre de la tabla**: `urls` (¡importante usar minúsculas!)
+   - **Columnas**:
+     - `id` (tipo: text, Primary Key)
+     - `original_url` (tipo: text, Not Null)
+     - `creation_date` (tipo: text, Not Null)
+     - `times_clicked` (tipo: integer, Not Null, Default: 0)
+     - `short_url` (tipo: text, Not Null)
+
+   Alternativamente, puedes usar el SQL Editor y ejecutar:
 
 ```sql
--- Crear la tabla
-CREATE TABLE urls (
+-- Crear la tabla en el esquema public
+CREATE TABLE public.urls (
   id TEXT PRIMARY KEY,
   original_url TEXT NOT NULL,
   creation_date TEXT NOT NULL,
@@ -44,23 +54,22 @@ CREATE TABLE urls (
 );
 
 -- IMPORTANTE: Habilitar Row Level Security (RLS) para la tabla
-ALTER TABLE urls ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.urls ENABLE ROW LEVEL SECURITY;
 
 -- Crear políticas para permitir operaciones anónimas
-CREATE POLICY "Permitir SELECT anónimo" ON urls FOR SELECT USING (true);
-CREATE POLICY "Permitir INSERT anónimo" ON urls FOR INSERT WITH CHECK (true);
-CREATE POLICY "Permitir UPDATE anónimo" ON urls FOR UPDATE USING (true);
-
--- Función para incrementar el contador de clics
-CREATE OR REPLACE FUNCTION increment_counter(value integer)
-RETURNS integer
-LANGUAGE sql
-AS $$
-  SELECT value + 1;
-$$;
+CREATE POLICY "Permitir SELECT anónimo" ON public.urls FOR SELECT USING (true);
+CREATE POLICY "Permitir INSERT anónimo" ON public.urls FOR INSERT WITH CHECK (true);
+CREATE POLICY "Permitir UPDATE anónimo" ON public.urls FOR UPDATE USING (true);
 ```
 
-4. En la sección "Project Settings" → "API", copia la URL y la clave anónima para usarlas en tus variables de entorno.
+4. Verifica los permisos de Row Level Security (RLS):
+
+   - Ve a "Authentication" → "Policies" y asegúrate de que la tabla `urls` tenga políticas para permitir SELECT, INSERT y UPDATE.
+   - Si no están configuradas, crea las políticas con acceso "Public" (para usuarios anónimos).
+
+5. En la sección "Project Settings" → "API", copia:
+   - **Project URL**: Para la variable `SUPABASE_URL`
+   - **anon/public API key**: Para la variable `SUPABASE_KEY`
 
 ### Configuración en Render o tu proveedor de hosting
 
