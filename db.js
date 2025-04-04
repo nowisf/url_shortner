@@ -28,6 +28,9 @@ if (process.env.NODE_ENV === "production") {
     process.exit(1);
   }
 
+  // Intentar descubrir en qué esquema está la tabla
+  let currentSchema = "api"; // Por defecto intentamos con "api"
+
   // Crear cliente de Supabase con opciones mejoradas para clave de servicio
   console.log("Iniciando conexión con Supabase...");
   const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -43,6 +46,50 @@ if (process.env.NODE_ENV === "production") {
       },
     },
   });
+
+  // Función para probar diferentes esquemas
+  const checkSchemas = async () => {
+    console.log("Intentando descubrir el esquema correcto...");
+
+    const schemas = ["api", "public", ""];
+
+    for (const schema of schemas) {
+      console.log(`Probando con esquema: ${schema || "default"}`);
+      try {
+        const { data, error } = await supabase
+          .from("urls")
+          .select("count")
+          .limit(1);
+
+        if (!error) {
+          console.log(`¡Esquema encontrado! Usando: ${schema || "default"}`);
+          currentSchema = schema;
+          return true;
+        } else {
+          console.log(`Error con esquema ${schema}:`, error.message);
+        }
+      } catch (err) {
+        console.error(`Error al probar esquema ${schema}:`, err);
+      }
+    }
+
+    // Intentar con API directa para más información
+    try {
+      console.log("Probando API directa para listar esquemas...");
+      const response = await fetch(`${supabaseUrl}/rest/v1/`, {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+      });
+      const data = await response.json();
+      console.log("Información de API:", data);
+    } catch (err) {
+      console.error("Error al consultar API directa:", err);
+    }
+
+    return false;
+  };
 
   // Función para verificar la conexión
   const checkConnection = () => {
@@ -73,21 +120,32 @@ if (process.env.NODE_ENV === "production") {
             console.error("Error al analizar JWT:", e);
           }
 
-          // Intentar usar la API REST directamente como último recurso
-          console.log("Intentando usar API REST directamente...");
-          fetch(`${supabaseUrl}/rest/v1/urls?select=count`, {
-            headers: {
-              apikey: supabaseKey,
-              Authorization: `Bearer ${supabaseKey}`,
-            },
-          })
-            .then((response) => response.json())
-            .then((data) => {
-              console.log("Respuesta directa API REST:", data);
-            })
-            .catch((restError) => {
-              console.error("Error con API REST directa:", restError);
-            });
+          // Intentar comprobar si la tabla existe
+          checkSchemas().then((found) => {
+            if (!found) {
+              console.error(
+                "No se pudo encontrar la tabla en ningún esquema conocido."
+              );
+              console.log(
+                "Intenta crear la tabla manualmente en Supabase con:"
+              );
+              console.log(`
+                CREATE TABLE urls (
+                  id TEXT PRIMARY KEY,
+                  original_url TEXT NOT NULL,
+                  creation_date TEXT NOT NULL,
+                  times_clicked INTEGER NOT NULL DEFAULT 0,
+                  short_url TEXT NOT NULL
+                );
+                
+                ALTER TABLE urls ENABLE ROW LEVEL SECURITY;
+                
+                -- Otorgar permisos explícitos
+                GRANT ALL PRIVILEGES ON TABLE urls TO service_role;
+                GRANT ALL PRIVILEGES ON TABLE urls TO anon;
+              `);
+            }
+          });
 
           return false;
         }
@@ -140,50 +198,33 @@ if (process.env.NODE_ENV === "production") {
             ) {
               console.log("Ejecutando UPDATE contador en Supabase");
               try {
-                // Intentar update directo sin consultar primero
-                const updateResult = await supabase.rpc(
-                  "increment_url_counter",
-                  {
-                    url_short_key: params[0],
-                  }
-                );
+                // Intentar update directo sin RPC primero
+                const getResult = await supabase
+                  .from("urls")
+                  .select("times_clicked")
+                  .eq("short_url", params[0])
+                  .single();
 
-                if (updateResult.error) {
-                  console.log(
-                    "Error con RPC, intentando actualización directa..."
-                  );
-
-                  // Si falla el RPC, intentamos el enfoque anterior
-                  const getResult = await supabase
-                    .from("urls")
-                    .select("times_clicked")
-                    .eq("short_url", params[0])
-                    .single();
-
-                  if (getResult.error) {
-                    console.error(
-                      "Error al obtener contador:",
-                      getResult.error
-                    );
-                    throw getResult.error;
-                  }
-
-                  const newCount = (getResult.data?.times_clicked || 0) + 1;
-                  const directUpdateResult = await supabase
-                    .from("urls")
-                    .update({ times_clicked: newCount })
-                    .eq("short_url", params[0]);
-
-                  if (directUpdateResult.error) {
-                    console.error(
-                      "Error al actualizar contador:",
-                      directUpdateResult.error
-                    );
-                    throw directUpdateResult.error;
-                  }
-                  return directUpdateResult.data;
+                if (getResult.error) {
+                  console.error("Error al obtener contador:", getResult.error);
+                  // Continuar con la redirección incluso si hay error
+                  return null;
                 }
 
+                const newCount = (getResult.data?.times_clicked || 0) + 1;
+                const updateResult = await supabase
+                  .from("urls")
+                  .update({ times_clicked: newCount })
+                  .eq("short_url", params[0]);
+
+                if (updateResult.error) {
+                  console.error(
+                    "Error al actualizar contador:",
+                    updateResult.error
+                  );
+                  // Continuar con la redirección incluso si hay error
+                  return null;
+                }
                 return updateResult.data;
               } catch (updateErr) {
                 console.error("Error completo en actualización:", updateErr);
