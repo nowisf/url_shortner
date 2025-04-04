@@ -46,11 +46,10 @@ if (process.env.NODE_ENV === "production") {
 
   // Función para verificar la conexión
   const checkConnection = () => {
-    console.log("Verificando conexión con Supabase (usando esquema public)...");
+    console.log("Verificando conexión con Supabase (tabla urls)...");
     return supabase
       .from("urls")
       .select("*", { count: "exact", head: true })
-      .schema("public") // Especificar el esquema explícitamente
       .then(({ count, error }) => {
         if (error) {
           console.error("Error al conectar con Supabase:", error);
@@ -77,7 +76,7 @@ if (process.env.NODE_ENV === "production") {
           // Mostrar recomendaciones SQL
           console.log("Ejecuta estas consultas SQL en Supabase:");
           console.log(`
-            -- Otorgar permisos al esquema public
+            -- Otorgar permisos a la tabla
             GRANT ALL PRIVILEGES ON TABLE public.urls TO service_role;
             GRANT ALL PRIVILEGES ON TABLE public.urls TO anon;
             
@@ -118,18 +117,15 @@ if (process.env.NODE_ENV === "production") {
           try {
             // Adaptar consultas INSERT, UPDATE, DELETE para Supabase
             if (text.trim().toLowerCase().startsWith("insert into urls")) {
-              console.log("Ejecutando INSERT en Supabase (esquema public)");
-              const { data, error } = await supabase
-                .from("urls")
-                .schema("public") // Especificar el esquema explícitamente
-                .insert([
-                  {
-                    id: params[0],
-                    original_url: params[1],
-                    creation_date: params[2],
-                    short_url: params[3],
-                  },
-                ]);
+              console.log("Ejecutando INSERT en Supabase");
+              const { data, error } = await supabase.from("urls").insert([
+                {
+                  id: params[0],
+                  original_url: params[1],
+                  creation_date: params[2],
+                  short_url: params[3],
+                },
+              ]);
               if (error) {
                 console.error("Error en insert:", error);
                 throw error;
@@ -141,14 +137,11 @@ if (process.env.NODE_ENV === "production") {
                 .toLowerCase()
                 .includes("update urls set times_clicked")
             ) {
-              console.log(
-                "Ejecutando UPDATE contador en Supabase (esquema public)"
-              );
+              console.log("Ejecutando UPDATE contador en Supabase");
               try {
                 // Intentar update directo
                 const getResult = await supabase
                   .from("urls")
-                  .schema("public") // Especificar el esquema explícitamente
                   .select("times_clicked")
                   .eq("short_url", params[0])
                   .single();
@@ -162,7 +155,6 @@ if (process.env.NODE_ENV === "production") {
                 const newCount = (getResult.data?.times_clicked || 0) + 1;
                 const updateResult = await supabase
                   .from("urls")
-                  .schema("public") // Especificar el esquema explícitamente
                   .update({ times_clicked: newCount })
                   .eq("short_url", params[0]);
 
@@ -190,12 +182,9 @@ if (process.env.NODE_ENV === "production") {
           try {
             // Adaptar consultas SELECT para Supabase
             if (text.includes("FROM urls WHERE short_url =")) {
-              console.log(
-                `Buscando URL con short_url=${params[0]} (esquema public)`
-              );
+              console.log(`Buscando URL con short_url=${params[0]}`);
               const { data, error } = await supabase
                 .from("urls")
-                .schema("public") // Especificar el esquema explícitamente
                 .select("*")
                 .eq("short_url", params[0])
                 .single();
@@ -209,14 +198,10 @@ if (process.env.NODE_ENV === "production") {
               return data;
             } else if (text.includes("FROM urls WHERE original_url =")) {
               console.log(
-                `Buscando URL con original_url=${params[0].substring(
-                  0,
-                  30
-                )}... (esquema public)`
+                `Buscando URL con original_url=${params[0].substring(0, 30)}...`
               );
               const { data, error } = await supabase
                 .from("urls")
-                .schema("public") // Especificar el esquema explícitamente
                 .select("*")
                 .eq("original_url", params[0])
                 .single();
@@ -239,11 +224,8 @@ if (process.env.NODE_ENV === "production") {
         },
         all: async (...params) => {
           try {
-            console.log("Consultando todas las URLs (esquema public)");
-            const { data, error } = await supabase
-              .from("urls")
-              .schema("public") // Especificar el esquema explícitamente
-              .select("*");
+            console.log("Consultando todas las URLs");
+            const { data, error } = await supabase.from("urls").select("*");
             if (error) {
               console.error("Error en all:", error);
               throw error;
