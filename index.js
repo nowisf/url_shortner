@@ -1,14 +1,23 @@
 import { db } from "./db.js";
 import express from "express";
 import "dotenv/config";
-import "chance";
+import cors from "cors";
 
 import { isURL, newPathUrl } from "./utils.js";
 
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
 const app = express();
 
 app.use(express.json());
+app.use(
+  cors({
+    origin:
+      process.env.NODE_ENV === "production"
+        ? process.env.FRONTEND_URL || "*"
+        : "http://localhost:5173", // Frontend URL basado en entorno o cualquier origen
+    methods: ["GET", "POST"],
+  })
+);
 
 app.listen(PORT, () => {
   console.log(`Shortener app ${PORT}`);
