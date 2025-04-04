@@ -18,14 +18,20 @@ function randomString(length) {
   ).join("");
 }
 
-function newPathUrl() {
+async function newPathUrl() {
   const short_url = randomString(5);
-  const stmt = db.prepare("SELECT short_url FROM urls WHERE short_url = ?");
-  const result = stmt.get(short_url);
-  if (result) {
-    return newPathUrl();
+  try {
+    const stmt = db.prepare("SELECT short_url FROM urls WHERE short_url = ?");
+    const result = await stmt.get(short_url);
+    if (result) {
+      return await newPathUrl(); // Llamada recursiva con await
+    }
+    return short_url;
+  } catch (error) {
+    console.error("Error al generar nuevo path:", error);
+    // En caso de error, devolver un string único pero loggear el error
+    return `${short_url}_${Date.now()}`;
   }
-  return short_url;
 }
 
 export { isURL, newPathUrl };

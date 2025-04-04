@@ -34,6 +34,7 @@ Esto iniciará el servidor en modo desarrollo usando SQLite como base de datos.
 3. Ve a la sección "SQL Editor" y ejecuta el siguiente SQL para crear la tabla:
 
 ```sql
+-- Crear la tabla
 CREATE TABLE urls (
   id TEXT PRIMARY KEY,
   original_url TEXT NOT NULL,
@@ -42,15 +43,21 @@ CREATE TABLE urls (
   short_url TEXT NOT NULL
 );
 
+-- IMPORTANTE: Habilitar Row Level Security (RLS) para la tabla
+ALTER TABLE urls ENABLE ROW LEVEL SECURITY;
+
+-- Crear políticas para permitir operaciones anónimas
+CREATE POLICY "Permitir SELECT anónimo" ON urls FOR SELECT USING (true);
+CREATE POLICY "Permitir INSERT anónimo" ON urls FOR INSERT WITH CHECK (true);
+CREATE POLICY "Permitir UPDATE anónimo" ON urls FOR UPDATE USING (true);
+
 -- Función para incrementar el contador de clics
-CREATE OR REPLACE FUNCTION increment_clicks(short_url_param TEXT)
-RETURNS void AS $$
-BEGIN
-  UPDATE urls
-  SET times_clicked = times_clicked + 1
-  WHERE short_url = short_url_param;
-END;
-$$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION increment_counter(value integer)
+RETURNS integer
+LANGUAGE sql
+AS $$
+  SELECT value + 1;
+$$;
 ```
 
 4. En la sección "Project Settings" → "API", copia la URL y la clave anónima para usarlas en tus variables de entorno.
