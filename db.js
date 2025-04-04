@@ -28,9 +28,6 @@ if (process.env.NODE_ENV === "production") {
     process.exit(1);
   }
 
-  // Intentar descubrir en qué esquema está la tabla
-  let currentSchema = "api"; // Por defecto intentamos con "api"
-
   // Crear cliente de Supabase con opciones mejoradas para clave de servicio
   console.log("Iniciando conexión con Supabase...");
   const supabase = createClient(supabaseUrl, supabaseKey, {
@@ -47,56 +44,13 @@ if (process.env.NODE_ENV === "production") {
     },
   });
 
-  // Función para probar diferentes esquemas
-  const checkSchemas = async () => {
-    console.log("Intentando descubrir el esquema correcto...");
-
-    const schemas = ["api", "public", ""];
-
-    for (const schema of schemas) {
-      console.log(`Probando con esquema: ${schema || "default"}`);
-      try {
-        const { data, error } = await supabase
-          .from("urls")
-          .select("count")
-          .limit(1);
-
-        if (!error) {
-          console.log(`¡Esquema encontrado! Usando: ${schema || "default"}`);
-          currentSchema = schema;
-          return true;
-        } else {
-          console.log(`Error con esquema ${schema}:`, error.message);
-        }
-      } catch (err) {
-        console.error(`Error al probar esquema ${schema}:`, err);
-      }
-    }
-
-    // Intentar con API directa para más información
-    try {
-      console.log("Probando API directa para listar esquemas...");
-      const response = await fetch(`${supabaseUrl}/rest/v1/`, {
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-      });
-      const data = await response.json();
-      console.log("Información de API:", data);
-    } catch (err) {
-      console.error("Error al consultar API directa:", err);
-    }
-
-    return false;
-  };
-
   // Función para verificar la conexión
   const checkConnection = () => {
-    console.log("Verificando conexión con Supabase (con clave de servicio)...");
+    console.log("Verificando conexión con Supabase (usando esquema public)...");
     return supabase
       .from("urls")
       .select("*", { count: "exact", head: true })
+      .schema("public") // Especificar el esquema explícitamente
       .then(({ count, error }) => {
         if (error) {
           console.error("Error al conectar con Supabase:", error);
@@ -120,37 +74,25 @@ if (process.env.NODE_ENV === "production") {
             console.error("Error al analizar JWT:", e);
           }
 
-          // Intentar comprobar si la tabla existe
-          checkSchemas().then((found) => {
-            if (!found) {
-              console.error(
-                "No se pudo encontrar la tabla en ningún esquema conocido."
-              );
-              console.log(
-                "Intenta crear la tabla manualmente en Supabase con:"
-              );
-              console.log(`
-                CREATE TABLE urls (
-                  id TEXT PRIMARY KEY,
-                  original_url TEXT NOT NULL,
-                  creation_date TEXT NOT NULL,
-                  times_clicked INTEGER NOT NULL DEFAULT 0,
-                  short_url TEXT NOT NULL
-                );
-                
-                ALTER TABLE urls ENABLE ROW LEVEL SECURITY;
-                
-                -- Otorgar permisos explícitos
-                GRANT ALL PRIVILEGES ON TABLE urls TO service_role;
-                GRANT ALL PRIVILEGES ON TABLE urls TO anon;
-              `);
-            }
-          });
+          // Mostrar recomendaciones SQL
+          console.log("Ejecuta estas consultas SQL en Supabase:");
+          console.log(`
+            -- Otorgar permisos al esquema public
+            GRANT ALL PRIVILEGES ON TABLE public.urls TO service_role;
+            GRANT ALL PRIVILEGES ON TABLE public.urls TO anon;
+            
+            -- Activar RLS
+            ALTER TABLE public.urls ENABLE ROW LEVEL SECURITY;
+            
+            -- Crear política
+            DROP POLICY IF EXISTS "service_role_access" ON public.urls;
+            CREATE POLICY "service_role_access" ON public.urls FOR ALL TO service_role USING (true);
+          `);
 
           return false;
         }
         console.log(
-          `Conectado a Supabase. Tabla 'urls' tiene ${count || 0} registros.`
+          `¡Conexión exitosa! Tabla 'urls' tiene ${count || 0} registros.`
         );
         return true;
       })
@@ -166,7 +108,7 @@ if (process.env.NODE_ENV === "production") {
   // Agregar un retraso antes de verificar la conexión
   setTimeout(() => {
     checkConnection();
-  }, 5000);
+  }, 3000);
 
   // Crear una versión compatible con la API de better-sqlite3
   db = {
@@ -176,15 +118,18 @@ if (process.env.NODE_ENV === "production") {
           try {
             // Adaptar consultas INSERT, UPDATE, DELETE para Supabase
             if (text.trim().toLowerCase().startsWith("insert into urls")) {
-              console.log("Ejecutando INSERT en Supabase");
-              const { data, error } = await supabase.from("urls").insert([
-                {
-                  id: params[0],
-                  original_url: params[1],
-                  creation_date: params[2],
-                  short_url: params[3],
-                },
-              ]);
+              console.log("Ejecutando INSERT en Supabase (esquema public)");
+              const { data, error } = await supabase
+                .from("urls")
+                .schema("public") // Especificar el esquema explícitamente
+                .insert([
+                  {
+                    id: params[0],
+                    original_url: params[1],
+                    creation_date: params[2],
+                    short_url: params[3],
+                  },
+                ]);
               if (error) {
                 console.error("Error en insert:", error);
                 throw error;
@@ -196,11 +141,14 @@ if (process.env.NODE_ENV === "production") {
                 .toLowerCase()
                 .includes("update urls set times_clicked")
             ) {
-              console.log("Ejecutando UPDATE contador en Supabase");
+              console.log(
+                "Ejecutando UPDATE contador en Supabase (esquema public)"
+              );
               try {
-                // Intentar update directo sin RPC primero
+                // Intentar update directo
                 const getResult = await supabase
                   .from("urls")
+                  .schema("public") // Especificar el esquema explícitamente
                   .select("times_clicked")
                   .eq("short_url", params[0])
                   .single();
@@ -214,6 +162,7 @@ if (process.env.NODE_ENV === "production") {
                 const newCount = (getResult.data?.times_clicked || 0) + 1;
                 const updateResult = await supabase
                   .from("urls")
+                  .schema("public") // Especificar el esquema explícitamente
                   .update({ times_clicked: newCount })
                   .eq("short_url", params[0]);
 
@@ -241,9 +190,12 @@ if (process.env.NODE_ENV === "production") {
           try {
             // Adaptar consultas SELECT para Supabase
             if (text.includes("FROM urls WHERE short_url =")) {
-              console.log(`Buscando URL con short_url=${params[0]}`);
+              console.log(
+                `Buscando URL con short_url=${params[0]} (esquema public)`
+              );
               const { data, error } = await supabase
                 .from("urls")
+                .schema("public") // Especificar el esquema explícitamente
                 .select("*")
                 .eq("short_url", params[0])
                 .single();
@@ -257,10 +209,14 @@ if (process.env.NODE_ENV === "production") {
               return data;
             } else if (text.includes("FROM urls WHERE original_url =")) {
               console.log(
-                `Buscando URL con original_url=${params[0].substring(0, 30)}...`
+                `Buscando URL con original_url=${params[0].substring(
+                  0,
+                  30
+                )}... (esquema public)`
               );
               const { data, error } = await supabase
                 .from("urls")
+                .schema("public") // Especificar el esquema explícitamente
                 .select("*")
                 .eq("original_url", params[0])
                 .single();
@@ -283,8 +239,11 @@ if (process.env.NODE_ENV === "production") {
         },
         all: async (...params) => {
           try {
-            console.log("Consultando todas las URLs");
-            const { data, error } = await supabase.from("urls").select("*");
+            console.log("Consultando todas las URLs (esquema public)");
+            const { data, error } = await supabase
+              .from("urls")
+              .schema("public") // Especificar el esquema explícitamente
+              .select("*");
             if (error) {
               console.error("Error en all:", error);
               throw error;
