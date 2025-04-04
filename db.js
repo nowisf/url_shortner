@@ -28,13 +28,25 @@ if (process.env.NODE_ENV === "production") {
     process.exit(1);
   }
 
-  // Crear cliente de Supabase
+  // Crear cliente de Supabase con opciones mejoradas para clave de servicio
   console.log("Iniciando conexión con Supabase...");
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      headers: {
+        // Asegurar que ambos headers estén configurados correctamente para clave de servicio
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+    },
+  });
 
   // Función para verificar la conexión
   const checkConnection = () => {
-    console.log("Verificando conexión con Supabase...");
+    console.log("Verificando conexión con Supabase (con clave de servicio)...");
     return supabase
       .from("urls")
       .select("*", { count: "exact", head: true })
@@ -43,16 +55,40 @@ if (process.env.NODE_ENV === "production") {
           console.error("Error al conectar con Supabase:", error);
           console.log("Detalles del error:", JSON.stringify(error));
 
-          // Intentar detectar si es un problema de credenciales o permisos
-          if (error.code === "PGRST301" || error.message?.includes("JWT")) {
-            console.error(
-              "Posible problema con la clave de API o autenticación"
-            );
-          } else if (error.code === "PGRST106") {
-            console.error(
-              "Problema con el esquema o nombre de tabla. Asegúrate que la tabla 'urls' existe en el esquema 'public'"
-            );
+          // Analizar el JWT para verificar el rol
+          try {
+            const jwtParts = supabaseKey.split(".");
+            if (jwtParts.length === 3) {
+              const payload = JSON.parse(
+                Buffer.from(jwtParts[1], "base64").toString()
+              );
+              console.log("Rol en JWT:", payload.role);
+              if (payload.role !== "service_role") {
+                console.error(
+                  "⚠️ ADVERTENCIA: No estás usando una clave con rol service_role"
+                );
+              }
+            }
+          } catch (e) {
+            console.error("Error al analizar JWT:", e);
           }
+
+          // Intentar usar la API REST directamente como último recurso
+          console.log("Intentando usar API REST directamente...");
+          fetch(`${supabaseUrl}/rest/v1/urls?select=count`, {
+            headers: {
+              apikey: supabaseKey,
+              Authorization: `Bearer ${supabaseKey}`,
+            },
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              console.log("Respuesta directa API REST:", data);
+            })
+            .catch((restError) => {
+              console.error("Error con API REST directa:", restError);
+            });
+
           return false;
         }
         console.log(
@@ -72,7 +108,7 @@ if (process.env.NODE_ENV === "production") {
   // Agregar un retraso antes de verificar la conexión
   setTimeout(() => {
     checkConnection();
-  }, 2000);
+  }, 5000);
 
   // Crear una versión compatible con la API de better-sqlite3
   db = {
@@ -103,32 +139,57 @@ if (process.env.NODE_ENV === "production") {
                 .includes("update urls set times_clicked")
             ) {
               console.log("Ejecutando UPDATE contador en Supabase");
-              // Intentar update directo sin rpc
-              const getResult = await supabase
-                .from("urls")
-                .select("times_clicked")
-                .eq("short_url", params[0])
-                .single();
-
-              if (getResult.error) {
-                console.error("Error al obtener contador:", getResult.error);
-                throw getResult.error;
-              }
-
-              const newCount = (getResult.data?.times_clicked || 0) + 1;
-              const updateResult = await supabase
-                .from("urls")
-                .update({ times_clicked: newCount })
-                .eq("short_url", params[0]);
-
-              if (updateResult.error) {
-                console.error(
-                  "Error al actualizar contador:",
-                  updateResult.error
+              try {
+                // Intentar update directo sin consultar primero
+                const updateResult = await supabase.rpc(
+                  "increment_url_counter",
+                  {
+                    url_short_key: params[0],
+                  }
                 );
-                throw updateResult.error;
+
+                if (updateResult.error) {
+                  console.log(
+                    "Error con RPC, intentando actualización directa..."
+                  );
+
+                  // Si falla el RPC, intentamos el enfoque anterior
+                  const getResult = await supabase
+                    .from("urls")
+                    .select("times_clicked")
+                    .eq("short_url", params[0])
+                    .single();
+
+                  if (getResult.error) {
+                    console.error(
+                      "Error al obtener contador:",
+                      getResult.error
+                    );
+                    throw getResult.error;
+                  }
+
+                  const newCount = (getResult.data?.times_clicked || 0) + 1;
+                  const directUpdateResult = await supabase
+                    .from("urls")
+                    .update({ times_clicked: newCount })
+                    .eq("short_url", params[0]);
+
+                  if (directUpdateResult.error) {
+                    console.error(
+                      "Error al actualizar contador:",
+                      directUpdateResult.error
+                    );
+                    throw directUpdateResult.error;
+                  }
+                  return directUpdateResult.data;
+                }
+
+                return updateResult.data;
+              } catch (updateErr) {
+                console.error("Error completo en actualización:", updateErr);
+                // Permitir continuar incluso con error en el contador
+                return null;
               }
-              return updateResult.data;
             }
           } catch (err) {
             console.error("Error en run:", err);
