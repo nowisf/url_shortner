@@ -7,14 +7,15 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon index.js",
-    "start": "NODE_ENV=production node index.js"
+    "start": "node index.js",
+    "kill-port": "node killport.js",
+    "freedev": "node killport.js && npm run dev"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@supabase/supabase-js": "^2.39.7",
-    "better-sqlite3": "^11.9.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2"

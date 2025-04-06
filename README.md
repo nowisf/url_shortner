@@ -1,6 +1,6 @@
 # URL Shortener
 
-Un servicio para acortar URLs con back-end Express y base de datos SQLite en desarrollo y Supabase en producción.
+Un servicio para acortar URLs con back-end Express y base de datos Supabase.
 
 ## Instalación
 
@@ -17,24 +17,28 @@ cp .env.example .env
 # Editar .env con tus configuraciones
 ```
 
-## Desarrollo
+## Configuración de Supabase (Nuevo proyecto)
 
-```bash
-npm run dev
-```
+1. Crea una cuenta en [Supabase](https://supabase.com)
+2. Crea un nuevo proyecto:
 
-Esto iniciará el servidor en modo desarrollo usando SQLite como base de datos.
+   - Elige un nombre para el proyecto
+   - Establece una contraseña segura para la base de datos
+   - Selecciona una región cercana a tus usuarios
+   - Espera a que se cree el proyecto (1-2 minutos)
 
-## Producción con Supabase
+3. Configura el archivo `.env`:
 
-### Configuración en Supabase
+   - Busca `SUPABASE_URL` y `SUPABASE_KEY` en Project Settings > API
+   - Para `SUPABASE_URL`: Usa "Project URL"
+   - Para `SUPABASE_KEY`: Usa la clave "service_role key" (¡NUNCA expongas esta clave en el frontend!)
 
-1. Crea una cuenta en [Supabase](https://supabase.com/)
-2. Crea un nuevo proyecto
-3. Ve a la sección "SQL Editor" y ejecuta el siguiente SQL para crear la tabla:
+4. Crea la tabla en Supabase:
+   - Ve a SQL Editor
+   - Ejecuta los siguientes comandos SQL:
 
 ```sql
--- Crear la tabla en el esquema predeterminado
+-- Crear tabla urls
 CREATE TABLE urls (
   id TEXT PRIMARY KEY,
   original_url TEXT NOT NULL,
@@ -43,32 +47,39 @@ CREATE TABLE urls (
   short_url TEXT NOT NULL
 );
 
--- IMPORTANTE: Habilitar Row Level Security (RLS) para la tabla
+-- Habilitar RLS
 ALTER TABLE urls ENABLE ROW LEVEL SECURITY;
 
--- No necesitas crear políticas si usas clave de servicio (service_role)
-
--- Crear función para incrementar contador
-CREATE OR REPLACE FUNCTION increment_url_counter(url_short_key TEXT)
-RETURNS VOID AS $$
-BEGIN
-  UPDATE urls
-  SET times_clicked = times_clicked + 1
-  WHERE short_url = url_short_key;
-END;
-$$ LANGUAGE plpgsql;
+-- Crear política para permitir operaciones
+CREATE POLICY "Allow service_role access" ON urls
+  FOR ALL
+  TO service_role
+  USING (true);
 ```
 
-4. Habilita Row Level Security (RLS):
+## Ejecución
 
-   - Ve a "Authentication" → "Policies" y asegúrate de que RLS esté habilitado para la tabla `urls`
-   - **No necesitas crear políticas adicionales** si utilizas la clave de servicio
+```bash
+# Para desarrollo
+npm run dev
 
-5. En la sección "Project Settings" → "API", copia:
-   - **Project URL**: Para la variable `SUPABASE_URL`
-   - **service_role key (secret)**: Para la variable `SUPABASE_KEY` (IMPORTANTE: usa la clave service_role, NO la anon/public)
+# Para producción
+npm start
+```
 
-### Configuración en Render o tu proveedor de hosting
+## API Endpoints
+
+- `POST /shortner`: Crea una URL acortada
+
+  - Body: `{ "url": "https://example.com" }`
+  - Respuesta: `{ "fullShortUrl": "http://localhost:3000/abc123" }`
+
+- `GET /:shortUrl`: Redirecciona a la URL original
+
+- `GET /stats/:shortUrl`: Obtiene estadísticas de la URL
+  - Respuesta: `{ "original_url": "https://example.com", "times_clicked": 5 }`
+
+## Configuración en Render o tu proveedor de hosting
 
 1. Crea un nuevo servicio Web
 2. Conecta con tu repositorio de GitHub
@@ -83,20 +94,28 @@ Configura las siguientes variables:
 - `NODE_ENV`: `production`
 - `PORT`: `10000` (o el puerto que asigne tu host)
 - `SUPABASE_URL`: La URL de tu proyecto de Supabase
-- `SUPABASE_KEY`: La clave service_role (secreta) de Supabase - NUNCA uses la clave anónima
-- `FRONTEND_URL`: (Opcional) La URL de tu frontend. Si no se especifica, se permitirán solicitudes desde cualquier origen.
+- `SUPABASE_KEY`: La clave service_role (secreta) de Supabase
+- `FRONTEND_URL`: (Opcional) La URL de tu frontend
 
 ## Seguridad
 
-Al usar la clave service_role con Row Level Security (RLS) habilitada pero sin políticas, estás configurando la máxima seguridad:
+Importante:
 
-- Solo tu backend puede acceder a los datos usando la clave service_role
-- Cualquier otro cliente que intente acceder a la tabla obtendrá error o resultados vacíos
-- La clave service_role debe mantenerse segura y NUNCA exponerse en el frontend
+- La clave `service_role` otorga acceso completo a tu base de datos
+- NUNCA expongas esta clave en el frontend o código público
+- Usa RLS (Row Level Security) para proteger tus datos
+
+## Solución de problemas
+
+Si enfrentas problemas de conexión:
+
+1. Verifica que las claves en `.env` sean correctas
+2. Asegúrate de que la tabla se haya creado correctamente en Supabase
+3. Confirma que estás usando la clave `service_role` para el backend
 
 ## Estructura del proyecto
 
-- `index.js`: Punto de entrada de la aplicación
-- `db.js`: Configuración de la base de datos (SQLite/Supabase)
+- `index.js`: Punto de entrada de la aplicación y rutas
+- `db.js`: Configuración de la conexión a Supabase
 - `utils.js`: Funciones de utilidad
 - `.env`: Variables de entorno

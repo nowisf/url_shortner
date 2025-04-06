@@ -1,267 +1,193 @@
-import Database from "better-sqlite3";
 import { createClient } from "@supabase/supabase-js";
 import "dotenv/config";
 
-let db;
+/**
+ * Configuración de la conexión a Supabase
+ * SCHEMA: 'public' - Esquema utilizado para la tabla urls
+ */
+const SCHEMA = "public";
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
 
-// Verificar el entorno para usar la base de datos correspondiente
-if (process.env.NODE_ENV === "production") {
-  // Configuración para Supabase en producción
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_KEY;
-
-  console.log(
-    "SUPABASE_URL configurada:",
-    !!supabaseUrl,
-    supabaseUrl ? `(${supabaseUrl.substring(0, 15)}...)` : ""
+// Validación de variables de entorno
+if (!supabaseUrl || !supabaseKey) {
+  console.error(
+    "Error: SUPABASE_URL y SUPABASE_KEY son obligatorias en el archivo .env"
   );
-  console.log(
-    "SUPABASE_KEY configurada:",
-    !!supabaseKey,
-    supabaseKey ? `(longitud: ${supabaseKey.length})` : ""
-  );
+  process.exit(1);
+}
 
-  if (!supabaseUrl || !supabaseKey) {
-    console.error(
-      "Error: SUPABASE_URL y SUPABASE_KEY deben estar definidos en variables de entorno"
-    );
-    process.exit(1);
-  }
+// Log de configuración (versión segura sin mostrar claves completas)
+console.log(
+  "SUPABASE_URL:",
+  supabaseUrl ? `${supabaseUrl.substring(0, 15)}...` : "No configurada"
+);
+console.log(
+  "SUPABASE_KEY:",
+  supabaseKey
+    ? `Configurada (${supabaseKey.length} caracteres)`
+    : "No configurada"
+);
 
-  // Crear cliente de Supabase con opciones mejoradas para clave de servicio
-  console.log("Iniciando conexión con Supabase...");
-  const supabase = createClient(supabaseUrl, supabaseKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-    global: {
-      headers: {
-        // Asegurar que ambos headers estén configurados correctamente para clave de servicio
-        Authorization: `Bearer ${supabaseKey}`,
-      },
-    },
-  });
+// Crear cliente de Supabase
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-  // Función para verificar la conexión
-  const checkConnection = () => {
-    console.log("Verificando conexión con Supabase (tabla urls)...");
-    return supabase
+// Verificar conexión a la base de datos
+setTimeout(async () => {
+  console.log("Verificando conexión con Supabase...");
+
+  try {
+    // Verificar autenticación
+    const { error: authError } = await supabase.auth.getSession();
+    if (authError) {
+      console.error("Error de autenticación:", authError);
+      return;
+    }
+
+    // Verificar acceso a la tabla urls
+    const { count, error: tableError } = await supabase
       .from("urls")
-      .select("*", { count: "exact", head: true })
-      .then(({ count, error }) => {
-        if (error) {
-          console.error("Error al conectar con Supabase:", error);
-          console.log("Detalles del error:", JSON.stringify(error));
+      .select("*", { count: "exact", head: true });
 
-          // Analizar el JWT para verificar el rol
-          try {
-            const jwtParts = supabaseKey.split(".");
-            if (jwtParts.length === 3) {
-              const payload = JSON.parse(
-                Buffer.from(jwtParts[1], "base64").toString()
-              );
-              console.log("Rol en JWT:", payload.role);
-              if (payload.role !== "service_role") {
-                console.error(
-                  "⚠️ ADVERTENCIA: No estás usando una clave con rol service_role"
-                );
-              }
-            }
-          } catch (e) {
-            console.error("Error al analizar JWT:", e);
-          }
+    if (tableError) {
+      console.error("Error al verificar tabla 'urls':", tableError);
+      console.log(`
+Necesitas crear la tabla 'urls' en Supabase con estos comandos SQL:
 
-          // Mostrar recomendaciones SQL
-          console.log("Ejecuta estas consultas SQL en Supabase:");
-          console.log(`
-            -- Otorgar permisos a la tabla
-            GRANT ALL PRIVILEGES ON TABLE public.urls TO service_role;
-            GRANT ALL PRIVILEGES ON TABLE public.urls TO anon;
-            
-            -- Activar RLS
-            ALTER TABLE public.urls ENABLE ROW LEVEL SECURITY;
-            
-            -- Crear política
-            DROP POLICY IF EXISTS "service_role_access" ON public.urls;
-            CREATE POLICY "service_role_access" ON public.urls FOR ALL TO service_role USING (true);
-          `);
+CREATE TABLE ${SCHEMA}.urls (
+  id TEXT PRIMARY KEY,
+  original_url TEXT NOT NULL,
+  creation_date TEXT NOT NULL,
+  times_clicked INTEGER NOT NULL DEFAULT 0,
+  short_url TEXT NOT NULL
+);
 
-          return false;
-        }
-        console.log(
-          `¡Conexión exitosa! Tabla 'urls' tiene ${count || 0} registros.`
-        );
-        return true;
-      })
-      .catch((err) => {
-        console.error(
-          "Error no controlado al verificar conexión con Supabase:",
-          err
-        );
-        return false;
-      });
-  };
+ALTER TABLE ${SCHEMA}.urls ENABLE ROW LEVEL SECURITY;
 
-  // Agregar un retraso antes de verificar la conexión
-  setTimeout(() => {
-    checkConnection();
-  }, 3000);
+CREATE POLICY "Allow service_role access" ON ${SCHEMA}.urls
+  FOR ALL 
+  TO service_role 
+  USING (true);
+`);
+    } else {
+      console.log(
+        `Conexión exitosa. Tabla 'urls' tiene ${count || 0} registros.`
+      );
+    }
+  } catch (err) {
+    console.error("Error al verificar conexión:", err);
+  }
+}, 1000);
 
-  // Crear una versión compatible con la API de better-sqlite3
-  db = {
-    prepare: (text) => {
-      return {
-        run: async (...params) => {
-          try {
-            // Adaptar consultas INSERT, UPDATE, DELETE para Supabase
-            if (text.trim().toLowerCase().startsWith("insert into urls")) {
-              console.log("Ejecutando INSERT en Supabase");
-              const { data, error } = await supabase.from("urls").insert([
-                {
-                  id: params[0],
-                  original_url: params[1],
-                  creation_date: params[2],
-                  short_url: params[3],
-                },
-              ]);
-              if (error) {
-                console.error("Error en insert:", error);
-                throw error;
-              }
-              return data;
-            } else if (
-              text
-                .trim()
-                .toLowerCase()
-                .includes("update urls set times_clicked")
-            ) {
-              console.log("Ejecutando UPDATE contador en Supabase");
-              try {
-                // Intentar update directo
-                const getResult = await supabase
-                  .from("urls")
-                  .select("times_clicked")
-                  .eq("short_url", params[0])
-                  .single();
+/**
+ * Adaptador para mantener compatibilidad con la API de SQLite
+ * Convierte las operaciones SQL a llamadas de la API de Supabase
+ */
+const db = {
+  prepare: (text) => {
+    return {
+      run: async (...params) => {
+        try {
+          // INSERT
+          if (text.trim().toLowerCase().startsWith("insert into urls")) {
+            const { error } = await supabase.from("urls").insert([
+              {
+                id: params[0],
+                original_url: params[1],
+                creation_date: params[2],
+                short_url: params[3],
+              },
+            ]);
 
-                if (getResult.error) {
-                  console.error("Error al obtener contador:", getResult.error);
-                  // Continuar con la redirección incluso si hay error
-                  return null;
-                }
-
-                const newCount = (getResult.data?.times_clicked || 0) + 1;
-                const updateResult = await supabase
-                  .from("urls")
-                  .update({ times_clicked: newCount })
-                  .eq("short_url", params[0]);
-
-                if (updateResult.error) {
-                  console.error(
-                    "Error al actualizar contador:",
-                    updateResult.error
-                  );
-                  // Continuar con la redirección incluso si hay error
-                  return null;
-                }
-                return updateResult.data;
-              } catch (updateErr) {
-                console.error("Error completo en actualización:", updateErr);
-                // Permitir continuar incluso con error en el contador
-                return null;
-              }
-            }
-          } catch (err) {
-            console.error("Error en run:", err);
-            throw err;
-          }
-        },
-        get: async (...params) => {
-          try {
-            // Adaptar consultas SELECT para Supabase
-            if (text.includes("FROM urls WHERE short_url =")) {
-              console.log(`Buscando URL con short_url=${params[0]}`);
-              const { data, error } = await supabase
-                .from("urls")
-                .select("*")
-                .eq("short_url", params[0])
-                .single();
-
-              if (error) {
-                // Si es error de no encontrado, devolver null
-                if (error.code === "PGRST116") return null;
-                console.error("Error en get (short_url):", error);
-                throw error;
-              }
-              return data;
-            } else if (text.includes("FROM urls WHERE original_url =")) {
-              console.log(
-                `Buscando URL con original_url=${params[0].substring(0, 30)}...`
-              );
-              const { data, error } = await supabase
-                .from("urls")
-                .select("*")
-                .eq("original_url", params[0])
-                .single();
-
-              if (error) {
-                // Si es error de no encontrado, devolver null
-                if (error.code === "PGRST116") return null;
-                console.error("Error en get (original_url):", error);
-                throw error;
-              }
-              return data;
-            }
-            return null;
-          } catch (err) {
-            console.error("Error en get:", err);
-            console.error("Texto de la consulta:", text);
-            console.error("Parámetros:", params);
-            throw err;
-          }
-        },
-        all: async (...params) => {
-          try {
-            console.log("Consultando todas las URLs");
-            const { data, error } = await supabase.from("urls").select("*");
             if (error) {
-              console.error("Error en all:", error);
+              console.error("Error en insert:", error);
               throw error;
             }
-            return data || [];
-          } catch (err) {
-            console.error("Error en all:", err);
-            throw err;
+            return true;
           }
-        },
-      };
-    },
-    exec: async (text) => {
-      try {
-        // Esta función solo se usa durante la inicialización
-        console.log("Las tablas deben ser creadas manualmente en Supabase");
-        return null;
-      } catch (err) {
-        console.error("Error en exec:", err);
-        throw err;
-      }
-    },
-  };
-} else {
-  // SQLite para desarrollo
-  db = new Database("database.sqlite");
+          // UPDATE contador
+          else if (text.includes("update urls set times_clicked")) {
+            const { data, error: getError } = await supabase
+              .from("urls")
+              .select("times_clicked")
+              .eq("short_url", params[0])
+              .single();
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS urls (
-      id TEXT PRIMARY KEY,
-      original_url TEXT NOT NULL,
-      creation_date TEXT NOT NULL,
-      times_clicked INTEGER NOT NULL DEFAULT 0,
-      short_url TEXT NOT NULL
-    )
-  `);
-}
+            if (getError) {
+              console.error("Error al obtener contador:", getError);
+              return null;
+            }
+
+            const newCount = (data?.times_clicked || 0) + 1;
+            const { error: updateError } = await supabase
+              .from("urls")
+              .update({ times_clicked: newCount })
+              .eq("short_url", params[0]);
+
+            if (updateError) {
+              console.error("Error al actualizar contador:", updateError);
+            }
+            return true;
+          }
+          return null;
+        } catch (err) {
+          console.error("Error en operación de base de datos:", err);
+          return null;
+        }
+      },
+      get: async (...params) => {
+        try {
+          // Buscar por short_url
+          if (text.includes("FROM urls WHERE short_url =")) {
+            const { data, error } = await supabase
+              .from("urls")
+              .select("*")
+              .eq("short_url", params[0])
+              .single();
+
+            if (error && error.code !== "PGRST116") {
+              console.error("Error en búsqueda:", error);
+            }
+            return data;
+          }
+          // Buscar por original_url
+          else if (text.includes("FROM urls WHERE original_url =")) {
+            const { data, error } = await supabase
+              .from("urls")
+              .select("*")
+              .eq("original_url", params[0])
+              .single();
+
+            if (error && error.code !== "PGRST116") {
+              console.error("Error en búsqueda:", error);
+            }
+            return data;
+          }
+          return null;
+        } catch (err) {
+          console.error("Error en búsqueda:", err);
+          return null;
+        }
+      },
+      all: async () => {
+        try {
+          const { data, error } = await supabase.from("urls").select("*");
+          if (error) {
+            console.error("Error al listar URLs:", error);
+            return [];
+          }
+          return data || [];
+        } catch (err) {
+          console.error("Error al listar URLs:", err);
+          return [];
+        }
+      },
+    };
+  },
+  exec: () => {
+    // No-op: Supabase no requiere ejecución de comandos SQL directos
+    return null;
+  },
+};
 
 export { db };
